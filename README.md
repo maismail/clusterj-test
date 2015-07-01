@@ -23,3 +23,8 @@ PARTITION BY KEY (parent_id)
   ./clusterj-rc-test.sh MYSQL_CLUSTER_HOST DATA_BASE_NAME
 ```
 5. check stats folder for the results, you should have gnuplot installed to get a graph
+
+# Example
+Setup: 6 datanode mysql cluster 7.4.4, the experiment ran on a machine with 32 cores.
+
+![alt tag](https://github.com/maismail/clusterj-test/blob/master/cluster-rc-one-machine_32cores.png)
