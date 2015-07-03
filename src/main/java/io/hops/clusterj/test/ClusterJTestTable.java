@@ -73,7 +73,7 @@ PARTITION BY KEY (parent_id)
       dto.setModificationTime(System.currentTimeMillis());
       dto.setATime(System.currentTimeMillis());
       dto.setSize(rand.nextInt());
-      session.savePersistent(dto);
+      session.makePersistent(dto);
     }
   }
 

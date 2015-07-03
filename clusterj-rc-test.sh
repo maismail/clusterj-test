@@ -7,7 +7,7 @@ TotalTx=10000
 DEST=target
 res=stats
 processes=( 1 2 3 4 5 6 7 8 9 10 )
-threadsInc=( 5 10 15 20 25 30 35 40 45 50 55 60 65 70 )
+threadsInc=( 5 10 15 20 25 30 35 40 45 50 )
 JAR=$DEST/clusterj-test-1.0-SNAPSHOT-jar-with-dependencies.jar
 
 if [ -d $res ]; then
@@ -33,10 +33,10 @@ do
           mkdir $res/$p
         fi
 
-       echo "START Process $P numThreads $thInc ThreadOffset $to"
+       echo "START Process $p numThreads $thInc ThreadOffset $to"
        java -jar $JAR -dbHost $DBHost -schema $DB -numThreads $thInc -threadOffset $to -totalTx $TotalTx -statsFile $res/$p/$thInc-$p-$i &
        PIDS+=($!)
-       echo "PIDS ${PIDS[@]}"
+       #echo "PIDS ${PIDS[@]}"
        let i=$i-1
     done
 

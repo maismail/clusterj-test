@@ -18,7 +18,6 @@ import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class ConcurrentClusterJReaders {
 
@@ -44,7 +43,6 @@ public class ConcurrentClusterJReaders {
   @Option(name = "-statsFile", usage = "stats file")
   private String statsFile;
 
-  private AtomicInteger opsCompleted = new AtomicInteger(0);
   private SessionFactory dbSessionProvider;
   private List workers;
 
@@ -52,8 +50,6 @@ public class ConcurrentClusterJReaders {
   @Option(name = "-inodesPerTx",
       usage = "Max inodes to read/write in a tx. Default is 5")
   private static int INODES_PER_WORKER = 5;
-
-  private DescriptiveStatistics elapsedTime = new DescriptiveStatistics();
 
   public void startApplication(String[] args)
       throws InterruptedException, IOException {
@@ -95,7 +91,8 @@ public class ConcurrentClusterJReaders {
     props.setProperty("com.mysql.clusterj.connect.timeout.before", "30");
     props.setProperty("com.mysql.clusterj.connect.timeout.after", "20");
     props.setProperty("com.mysql.clusterj.max.transactions", "1024");
-    props.setProperty("com.mysql.clusterj.connection.pool.size", "1");
+    String cnpoolsize = String.valueOf(Math.max(Math.round(numThreads/5.0f), 1));
+    props.setProperty("com.mysql.clusterj.connection.pool.size", cnpoolsize);
     dbSessionProvider = ClusterJHelper.getSessionFactory(props);
 
     if (clean) {
@@ -105,10 +102,13 @@ public class ConcurrentClusterJReaders {
       System.exit(0);
     }
 
+
+    int txCountPerWorker = (int)Math.floor(totalTx / numThreads);
     workers = new ArrayList(numThreads);
     executor = Executors.newFixedThreadPool(numThreads);
     for (int i = 0; i < numThreads; i++) {
-      DBWriter worker = new DBWriter(threadOffset + i, dbSessionProvider.getSession());
+      DBWriter worker = new DBWriter(threadOffset + i, dbSessionProvider
+          .getSession(), txCountPerWorker);
       workers.add(worker);
     }
     populateDB();
@@ -137,6 +137,15 @@ public class ConcurrentClusterJReaders {
     }
     long endTime = System.currentTimeMillis();
 
+    DescriptiveStatistics elapsedTime = new DescriptiveStatistics();
+
+    for(Object worker : workers){
+      DBWriter writer = (DBWriter)worker;
+      for(long t : writer.times){
+        elapsedTime.addValue(t);
+      }
+    }
+
     System.out.println(numThreads + " " + elapsedTime.getN() + " " +
         elapsedTime.getMean() + " " + elapsedTime.getMin() + " " +
         elapsedTime.getMax());
@@ -158,10 +167,19 @@ public class ConcurrentClusterJReaders {
 
     private final int id;
     private final Session dbSession;
+    private final int txCount;
 
-    public DBWriter(int id, Session session) {
+    private int successful;
+    private int failed;
+    private List<Long> times;
+
+    public DBWriter(int id, Session session, int txCount) {
       this.id = id;
       this.dbSession = session;
+      this.txCount = txCount;
+      this.successful = 0;
+      this.failed = 0;
+      this.times = new ArrayList<Long>(txCount);
     }
 
     @Override
@@ -175,15 +193,16 @@ public class ConcurrentClusterJReaders {
           ClusterJTestTable.readINodes(id, dbSession, INODES_PER_WORKER);
           dbSession.currentTransaction().commit();
           long elapsed = System.currentTimeMillis() - t1;
-          elapsedTime.addValue(elapsed);
+          times.add(elapsed);
 
-          if (opsCompleted.incrementAndGet() >= totalTx) {
+          successful++;
+          if (successful + failed >= txCount) {
             dbSession.close();
             return null;
           }
 
         } catch (Throwable e) {
-          opsCompleted.incrementAndGet();
+          failed++;
           e.printStackTrace();
           dbSession.currentTransaction().rollback();
         }

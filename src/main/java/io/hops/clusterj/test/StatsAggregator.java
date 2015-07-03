@@ -68,7 +68,7 @@ public class StatsAggregator {
     String graph = "set terminal png enhanced\n" +
         "set style data lines\n" +
         "set border 3\n" +
-        "set key outside top center\n" +
+        "set key outside\n" +
         "set grid\n" +
         "set output 'cluster-rc-one-machine.png'\n" +
         "set xlabel \"Number of Processes\"\n" +
