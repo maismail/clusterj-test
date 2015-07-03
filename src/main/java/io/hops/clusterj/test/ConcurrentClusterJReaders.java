@@ -51,6 +51,10 @@ public class ConcurrentClusterJReaders {
       usage = "Max inodes to read/write in a tx. Default is 5")
   private static int INODES_PER_WORKER = 5;
 
+  private DescriptiveStatistics elapsedTime = new DescriptiveStatistics();
+  private DescriptiveStatistics openTimes = new DescriptiveStatistics();
+  private DescriptiveStatistics closeTimes = new DescriptiveStatistics();
+
   public void startApplication(String[] args)
       throws InterruptedException, IOException {
     parseArgs(args);
@@ -107,8 +111,7 @@ public class ConcurrentClusterJReaders {
     workers = new ArrayList(numThreads);
     executor = Executors.newFixedThreadPool(numThreads);
     for (int i = 0; i < numThreads; i++) {
-      DBWriter worker = new DBWriter(threadOffset + i, dbSessionProvider
-          .getSession(), txCountPerWorker);
+      DBWriter worker = new DBWriter(threadOffset + i, txCountPerWorker);
       workers.add(worker);
     }
     populateDB();
@@ -128,22 +131,11 @@ public class ConcurrentClusterJReaders {
 
   public void startWorkers() throws InterruptedException, IOException {
 
-    long startTime = System.currentTimeMillis();
     executor.invokeAll(workers);
     executor.shutdown();
 
     while (!executor.isTerminated()) {
       Thread.sleep(100);
-    }
-    long endTime = System.currentTimeMillis();
-
-    DescriptiveStatistics elapsedTime = new DescriptiveStatistics();
-
-    for(Object worker : workers){
-      DBWriter writer = (DBWriter)worker;
-      for(long t : writer.times){
-        elapsedTime.addValue(t);
-      }
     }
 
     System.out.println(numThreads + " " + elapsedTime.getN() + " " +
@@ -151,35 +143,26 @@ public class ConcurrentClusterJReaders {
         elapsedTime.getMax());
 
     if(statsFile != null) {
-      BufferedWriter writer =
-          new BufferedWriter(new FileWriter(new File(statsFile)));
-      writer.write("#" + (endTime - startTime));
-      for (double val : elapsedTime.getValues()) {
-        writer.write(String.valueOf(val));
-        writer.newLine();
-      }
-      writer.close();
+      writeArrayToFile(new File(statsFile), elapsedTime.getValues());
+      writeArrayToFile(new File(statsFile+"-open"), openTimes.getValues());
+      writeArrayToFile(new File(statsFile+"-close"), closeTimes.getValues());
     }
-    elapsedTime.clear();
   }
 
   public class DBWriter implements Callable {
 
     private final int id;
-    private final Session dbSession;
+    private Session dbSession;
     private final int txCount;
 
     private int successful;
     private int failed;
-    private List<Long> times;
 
-    public DBWriter(int id, Session session, int txCount) {
+    public DBWriter(int id, int txCount) {
       this.id = id;
-      this.dbSession = session;
       this.txCount = txCount;
       this.successful = 0;
       this.failed = 0;
-      this.times = new ArrayList<Long>(txCount);
     }
 
     @Override
@@ -187,17 +170,24 @@ public class ConcurrentClusterJReaders {
       while (true) {
         try {
           long t1 = System.currentTimeMillis();
+          dbSession = dbSessionProvider.getSession();
+          openTimes.addValue(System.currentTimeMillis() - t1);
+
+          t1 = System.currentTimeMillis();
           dbSession.currentTransaction().begin();
           dbSession.setLockMode(lockMode);
           //read data
           ClusterJTestTable.readINodes(id, dbSession, INODES_PER_WORKER);
           dbSession.currentTransaction().commit();
-          long elapsed = System.currentTimeMillis() - t1;
-          times.add(elapsed);
+
+          elapsedTime.addValue(System.currentTimeMillis() - t1);
+
+          t1 = System.currentTimeMillis();
+          dbSession.close();
+          closeTimes.addValue(System.currentTimeMillis() - t1);
 
           successful++;
           if (successful + failed >= txCount) {
-            dbSession.close();
             return null;
           }
 
@@ -211,9 +201,18 @@ public class ConcurrentClusterJReaders {
 
   }
 
+  private static void writeArrayToFile(File file, double[] values)
+      throws IOException {
+    BufferedWriter writer = new BufferedWriter(new FileWriter(file));
+    for (double val : values) {
+      writer.write(String.valueOf(val));
+      writer.newLine();
+    }
+    writer.close();
+  }
+
   public static void main(String[] args)
       throws IOException, InterruptedException {
     new ConcurrentClusterJReaders().startApplication(args);
   }
-
 }

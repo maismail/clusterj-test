@@ -20,11 +20,19 @@ public class StatsAggregator {
   public static void combineResults(File statsDir, int START, int END, int
       TH_INC, int TH_END)
       throws IOException {
+    combineResults(statsDir, START, END, TH_INC, TH_END, "");
+    combineResults(statsDir, START, END, TH_INC, TH_END, "-open");
+    combineResults(statsDir, START, END, TH_INC, TH_END, "-close");
+  }
+
+  public static void combineResults(File statsDir, int START, int END, int
+      TH_INC, int TH_END, String suffix)
+      throws IOException {
 
     for (int split = TH_INC; split <= TH_END; split += TH_INC) {
 
       BufferedWriter writer = new BufferedWriter(new FileWriter(new File
-          (statsDir, "cluster-rc-split-" + split + ".dat")));
+          (statsDir, "cluster-rc-split-" + split + suffix + ".dat")));
       writer.write("#numProcesses N Avg Min Max");
       writer.newLine();
 
@@ -34,7 +42,7 @@ public class StatsAggregator {
 
         for (int i = p; i > 0; i--) {
           File thStatsDir = new File(statsDir, String.valueOf(p));
-          String file = split + "-" + p + "-" + i;
+          String file = split + "-" + p + "-" + i + suffix;
           System.out.println("Read Data for " + file);
           try {
             BufferedReader reader = new BufferedReader(new FileReader(new File
@@ -60,28 +68,30 @@ public class StatsAggregator {
       writer.close();
     }
 
-    generateGnuPlot(statsDir, TH_INC, TH_END);
+    generateGnuPlot(statsDir, TH_INC, TH_END, suffix);
   }
 
-  private static void generateGnuPlot(File statsDir, int TH_INC, int TH_END)
+  private static void generateGnuPlot(File statsDir, int TH_INC, int TH_END,
+      String suffix)
       throws IOException {
     String graph = "set terminal png enhanced\n" +
         "set style data lines\n" +
         "set border 3\n" +
         "set key outside\n" +
         "set grid\n" +
-        "set output 'cluster-rc-one-machine.png'\n" +
+        "set output 'cluster-rc-one-machine" + suffix + ".png'\n" +
         "set xlabel \"Number of Processes\"\n" +
         "set ylabel \"Time (miliseconds)\"\n" +
         "plot ";
 
     for (int split = TH_INC; split <= TH_END; split+=TH_INC) {
-      graph += " \"cluster-rc-split-" + split + ".dat\" using 3:xtic(1) " +
+      graph += " \"cluster-rc-split-" + split + suffix +".dat\" using " +
+          "3:xtic(1) " +
           "title \" " + split + " Threads/Process\",";
     }
 
     BufferedWriter writer = new BufferedWriter(new FileWriter(new File
-        (statsDir, "cluster-rc-one-machine.gnu")));
+        (statsDir, "cluster-rc-one-machine"+ suffix+ ".gnu")));
     writer.write(graph.substring(0, graph.length()-1));
     writer.close();
   }
